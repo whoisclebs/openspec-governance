@@ -1,5 +1,7 @@
 /** Pure parsers for the Markdown artifacts of an OpenSpec change. */
 
+import type { SpecRow } from '../../types'
+
 export type Task = { id: string | null; isDone: boolean; text: string }
 
 export type Finding = {
@@ -72,3 +74,33 @@ export const parseFinding = (path: string, content: string): Finding => {
 }
 
 export const isVerificationName = (name: string): boolean => /verif/i.test(name)
+
+const DELTA_HEADING = /^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements\b/i
+const REQUIREMENT_HEADING = /^#{2,4}\s+Requirement:\s*(.+?)\s*$/i
+const SCENARIO_HEADING = /^#{3,6}\s+Scenario\b/i
+
+/** Reads the requirements of a spec file and how many scenarios each one has. */
+export const parseSpec = (path: string, content: string): SpecRow => {
+  const capability = /\/specs\/([^/]+)\//.exec(path)?.[1] ?? path.split('/').pop() ?? path
+  const requirements: SpecRow['requirements'] = []
+  let op = 'SPEC'
+
+  for (const line of content.split('\n')) {
+    const delta = DELTA_HEADING.exec(line)
+    if (delta !== null) {
+      op = (delta[1] ?? 'SPEC').toUpperCase()
+      continue
+    }
+
+    const requirement = REQUIREMENT_HEADING.exec(line)
+    if (requirement !== null) {
+      requirements.push({ name: requirement[1] ?? '', op, scenarios: 0 })
+      continue
+    }
+
+    const last = requirements.at(-1)
+    if (last !== undefined && SCENARIO_HEADING.test(line)) last.scenarios += 1
+  }
+
+  return { capability, file: path, requirements }
+}

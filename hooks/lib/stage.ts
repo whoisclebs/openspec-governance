@@ -1,12 +1,13 @@
-import type { Stage } from '../../types'
+import type { SpecRow, Stage } from '../../types'
 
-import { countScenarios, hasHeadings, parseFinding, parseTasks } from './artifacts'
+import { countScenarios, hasHeadings, parseFinding, parseSpec, parseTasks } from './artifacts'
 import type { ChangeFiles, Finding, Task } from './artifacts'
 
 export type Assessment = {
   stage: Stage
   tasks: Task[]
   findings: Finding[]
+  specs: SpecRow[]
   missing: string[]
   tasksDone: number
   tasksTotal: number
@@ -70,6 +71,7 @@ export const assess = (files: ChangeFiles): Assessment => {
   const common = {
     tasks,
     findings,
+    specs: files.specs.map(spec => parseSpec(spec.path, spec.content)),
     missing,
     tasksDone,
     tasksTotal: tasks.length,

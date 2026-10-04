@@ -1,12 +1,13 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
-import type { Focus, LogRow, Snapshot } from '../types'
+import type { ChangeInfo, Focus, LogRow, Overview } from '../types'
 import { isVerificationName } from './lib/artifacts'
 import { denyMessage, gateReasons, noChangeMessage } from './lib/gate'
 import { LOG_FILE, appendRow, formatRow, tailRows } from './lib/log'
 import type { LogKind } from './lib/log'
 import { dirname, isInside, joinPath, relativeTo, resolvePath } from './lib/paths'
+import { currentOf } from './lib/overview'
 import { assess } from './lib/stage'
 import type { Assessment } from './lib/stage'
 import { bandView, detailView } from './lib/views'
@@ -15,6 +16,7 @@ import {
   changeNameOf,
   changesDir,
   findProjectRoot,
+  listActiveChanges,
   loadChange,
   pickChange,
 } from './lib/workspace'
@@ -22,8 +24,10 @@ import {
 const PLUGIN = 'openspec-governance'
 const PANE = 'openspec-governance'
 
-const snapshot = atom({ plugin: 'openspec-governance', key: 'snapshot' } as const, null)
+const overview = atom({ plugin: 'openspec-governance', key: 'overview' } as const, null)
 const focus = atom({ plugin: 'openspec-governance', key: 'focus' } as const, null)
+const query = atom({ plugin: 'openspec-governance', key: 'query' } as const, '')
+const shown = atom({ plugin: 'openspec-governance', key: 'shown' } as const, [])
 
 type Engine = EngineInterface
 
@@ -38,9 +42,8 @@ type Outcome = { deny?: string; isError?: boolean; result?: unknown }
 
 type Edit = { tool: 'Write' | 'Edit' | 'NotebookEdit'; path: string }
 
-const snapshotOf = (root: string, name: string, assessment: Assessment, logTail: LogRow[]): Snapshot => ({
-  root,
-  change: name,
+const changeInfoOf = (name: string, assessment: Assessment, logTail: LogRow[]): ChangeInfo => ({
+  name,
   stage: assessment.stage,
   missing: assessment.missing,
   tasksDone: assessment.tasksDone,
@@ -54,6 +57,7 @@ const snapshotOf = (root: string, name: string, assessment: Assessment, logTail:
     status: finding.status,
     isOpenCritical: finding.isOpenCritical,
   })),
+  specs: assessment.specs,
   logTail,
 })
 
@@ -74,14 +78,29 @@ const readLogTail = async ($: Engine, root: string, name: string): Promise<LogRo
   return tailRows(text, LOG_ROWS_SHOWN)
 }
 
-const publish = async ($: Engine, root: string, name: string, assessment: Assessment) => {
-  const logTail = await readLogTail($, root, name)
-  await update($, snapshot, () => snapshotOf(root, name, assessment, logTail))
-  await update($, focus, (): Focus => ({ root, change: name }))
-}
+const infoOf = async ($: Engine, root: string, name: string): Promise<ChangeInfo> =>
+  changeInfoOf(name, await assessChange($, root, name), await readLogTail($, root, name))
 
-const refresh = async ($: Engine, root: string, name: string) =>
-  publish($, root, name, await assessChange($, root, name))
+/**
+ * Reloads every active change of a project into the overview. `preferred` takes
+ * the focus; otherwise the current focus is kept while its change still exists.
+ */
+const refreshRoot = async ($: Engine, root: string, preferred?: string) => {
+  const names = await listActiveChanges(fsOf($), root)
+  const changes = await Promise.all(names.map(name => infoOf($, root, name)))
+  const next: Overview = { root, changes }
+
+  const previous = await read($, overview)
+  if (JSON.stringify(previous) !== JSON.stringify(next)) await update($, overview, () => next)
+
+  const focused = await read($, focus)
+  const isKept =
+    preferred === undefined && focused !== null && focused.root === root && names.includes(focused.change)
+  if (isKept) return
+
+  const target = preferred ?? (await pickChange(fsOf($), root, root, undefined))
+  if (target !== null) await update($, focus, (): Focus => ({ root, change: target }))
+}
 
 const log = ($: Engine, root: string, name: string, kind: LogKind, detail: string) => {
   const path = joinPath(changesDir(root), name, LOG_FILE)
@@ -136,7 +155,7 @@ const governed = async <R extends Outcome>(
 
     if (mode === 'enforce') {
       await log($, root, name, 'gate-denied', `${edit.tool} \`${relative}\`: ${reasons.join('; ')}`)
-      await publish($, root, name, before)
+      await refreshRoot($, root, name)
       return { deny: denyMessage(PLUGIN, name, reasons) }
     }
 
@@ -173,19 +192,38 @@ const governed = async <R extends Outcome>(
     await log($, root, name, 'stage-check', `\`${before.stage}\` → \`${after.stage}\``)
   }
 
-  await publish($, root, name, after)
+  await refreshRoot($, root, name)
   return ran
 }
 
 const refreshFocused = async ($: Engine) => {
   const focused = await read($, focus)
-  if (focused !== null) return refresh($, focused.root, focused.change)
+  if (focused !== null) return refreshRoot($, focused.root)
 
   const root = await findProjectRoot(fsOf($), await $.session.cwd())
-  if (root === null) return
+  if (root !== null) await refreshRoot($, root)
+}
 
-  const name = await pickChange(fsOf($), root, root, undefined)
-  if (name !== null) await refresh($, root, name)
+// While the pane is open it re-reads the artifacts on a timer, so it stays live.
+const LIVE_MS = 3000
+let liveTimer: { cancel: () => void } | null = null
+
+const startLive = ($: Engine) => {
+  if (liveTimer !== null) return
+  liveTimer = $.clock.every(LIVE_MS, () => {
+    void refreshFocused($).catch(() => undefined)
+  })
+}
+
+const stopLive = () => {
+  liveTimer?.cancel()
+  liveTimer = null
+}
+
+const openPane = async ($: Engine) => {
+  await $.ui.open({ id: PANE, title: 'OpenSpec', focus: true })
+  await refreshFocused($).catch(() => undefined)
+  startLive($)
 }
 
 export const register: Register = (on, options) => {
@@ -206,19 +244,24 @@ export const register: Register = (on, options) => {
     const name = root === null ? null : changeNameOf(root, file)
 
     if (root !== null && name !== null && (await read($, focus))?.change !== name) {
-      await refresh($, root, name)
+      await refreshRoot($, root, name)
     }
 
     return next(e)
   })
 
   on('command.run', { command: 'openspec' }, async $ => {
-    await $.ui.open({ id: PANE, title: 'OpenSpec' })
+    await openPane($)
     return { text: 'OpenSpec pane opened.' }
   })
 
+  on('ui.close', { id: PANE }, ($, e, next) => {
+    stopLive()
+    return next(e)
+  })
+
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'openspec', description: 'Show the active OpenSpec change in a pane' })
+    await $.command.register({ name: 'openspec', description: 'Browse the OpenSpec changes, tasks and specs in a live pane' })
     const started = await next(e)
     await refreshFocused($).catch(() => undefined)
     return started
@@ -231,25 +274,34 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const current = await read($, snapshot)
-    if (current === null || e.props.hasSurvey) return next(e)
+    const all = await read($, overview)
+    const current = currentOf(all, await read($, focus))
+    if (all === null || current === null || e.props.hasSurvey) return next(e)
 
-    return bandView(
-      $.ui.resolve(e),
-      current,
-      () => $.ui.open({ id: PANE, title: 'OpenSpec' }),
-    )
+    return bandView($.ui.resolve(e), current, all.changes.length, () => openPane($))
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
-    const current = await read($, snapshot)
+    const all = await read($, overview)
+    const current = currentOf(all, await read($, focus))
     const ui = $.ui.resolve(e)
+    if (!('Input' in ui)) return next(e)
 
-    if (current === null) {
+    if (all === null || current === null) {
       const { Text } = ui
       return <Text dimColor>No active OpenSpec change. Read or edit a file under openspec/changes/&lt;name&gt;/ to pick one.</Text>
     }
 
-    return detailView(ui, current, () => refreshFocused($))
+    return detailView(
+      ui,
+      { overview: all, current, query: await read($, query), shown: await read($, shown) },
+      {
+        search: value => update($, query, () => value),
+        focus: name => update($, focus, (): Focus => ({ root: all.root, change: name })),
+        toggle: name =>
+          update($, shown, list => (list.includes(name) ? list.filter(one => one !== name) : [...list, name])),
+        refresh: () => refreshFocused($),
+      },
+    )
   })
 }
