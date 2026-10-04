@@ -241,3 +241,126 @@ describe('detail pane', () => {
     expect(await textOf(ui)).toContain('No active OpenSpec change')
   })
 })
+
+describe('live pane', () => {
+  const pane = { bodyColumns: 100, maxRows: 40, scroll: { offset: 0, bodyRows: 40 }, view: {}, title: 'OpenSpec' }
+  const OTHER = `${ROOT}/openspec/changes/other`
+
+  const twoChanges = (): Record<string, string> => ({
+    ...readyProject(),
+    [`${OTHER}/proposal.md`]: PROPOSAL,
+    [`${OTHER}/tasks.md`]: '- [ ] 1.1 Unrelated chore\n',
+  })
+
+  const textOf = async (ui: { findAll: (q: { type: string }) => Promise<{ text?: string }[]> }) =>
+    (await ui.findAll({ type: 'Text' })).map(node => node.text ?? '').join('\n')
+
+  const mount = (
+    $: { ui: { mount: (target: never) => Promise<unknown> } },
+  ) =>
+    $.ui.mount({
+      plugin: 'openspec-governance',
+      surface: 'terminal',
+      component: 'Pane',
+      requestId: 'openspec-governance',
+      props: pane,
+    } as never) as Promise<any>
+
+  const focusFirst = ($: any) => $.tool.call({ tool: 'Read', file_path: `${CHANGE}/proposal.md` })
+
+  test('lists every change with its stage and gate', async ($, on) => {
+    memoryFs(on, twoChanges(), ROOT)
+    mock.clock(on, { now: 0 })
+    await focusFirst($)
+
+    const text = await textOf(await mount($))
+
+    expect(text).toContain('Changes (2)')
+    expect(text).toContain('ready-to-implement')
+    expect(text).toContain('proposed')
+  })
+
+  test('shows every task, not just the first few', async ($, on) => {
+    const files = readyProject()
+    files[`${CHANGE}/tasks.md`] = Array.from({ length: 30 }, (_, index) => `- [ ] 1.${index + 1} Task number ${index + 1}`).join('\n')
+    memoryFs(on, files, ROOT)
+    mock.clock(on, { now: 0 })
+    await focusFirst($)
+
+    const text = await textOf(await mount($))
+
+    expect(text).toContain('1.1 Task number 1')
+    expect(text).toContain('1.30 Task number 30')
+    expect(text).not.toContain('more in tasks.md')
+  })
+
+  test('the filter box narrows tasks, specs and findings', async ($, on) => {
+    const files = readyProject()
+    files[`${CHANGE}/specs/search/spec.md`] = '## ADDED Requirements\n### Requirement: Fuzzy match\n#### Scenario: typo\n### Requirement: Exact match\n#### Scenario: same\n'
+    memoryFs(on, files, ROOT)
+    mock.clock(on, { now: 0 })
+    await focusFirst($)
+    const ui = await mount($)
+
+    await ui.input({ key: 'filter', text: 'fuzzy' })
+    const text = await textOf(ui)
+
+    expect(text).toContain('Fuzzy match')
+    expect(text).not.toContain('Exact match')
+    expect(text).toContain('No task matches.')
+    expect(text).toContain('1 match(es)')
+
+    await ui.input({ key: 'filter', text: 'index' })
+    const tasks = await textOf(ui)
+    expect(tasks).toContain('1.1 Add the index')
+    expect(tasks).not.toContain('1.2 Add tests')
+    expect(tasks).toContain('showing 1 of 2')
+  })
+
+  test('lists requirements with scenario counts and flags those with none', async ($, on) => {
+    const files = readyProject()
+    files[`${CHANGE}/specs/search/spec.md`] = '## ADDED Requirements\n### Requirement: Covered\n#### Scenario: a\n#### Scenario: b\n### Requirement: Bare\n'
+    memoryFs(on, files, ROOT)
+    mock.clock(on, { now: 0 })
+    await focusFirst($)
+
+    const text = await textOf(await mount($))
+
+    expect(text).toContain('Specs 1 file(s) · 2 requirement(s) · 2 scenario(s)')
+    expect(text).toContain('+ Covered')
+    expect(text).toContain('2 scenario(s)')
+    expect(text).toContain('+ Bare')
+    expect(text).toContain('0 scenario(s)')
+  })
+
+  test('focusing another change swaps the detail and the band', async ($, on) => {
+    memoryFs(on, twoChanges(), ROOT)
+    mock.clock(on, { now: 0 })
+    await focusFirst($)
+    const ui = await mount($)
+
+    expect(await textOf(ui)).toContain('━━ add-search')
+
+    await ui.press({ key: 'focus-other' })
+    const text = await textOf(ui)
+
+    expect(text).toContain('Unrelated chore')
+    expect(text).toContain('━━ other')
+    expect(text).not.toContain('Add the index')
+  })
+
+  test('shows more than one change until it is hidden again', async ($, on) => {
+    memoryFs(on, twoChanges(), ROOT)
+    mock.clock(on, { now: 0 })
+    await focusFirst($)
+    const ui = await mount($)
+
+    await ui.press({ key: 'toggle-other' })
+    const both = await textOf(ui)
+    expect(both).toContain('Add the index')
+    expect(both).toContain('Unrelated chore')
+
+    await ui.press({ key: 'toggle-other' })
+    expect(await textOf(ui)).not.toContain('Unrelated chore')
+  })
+})
