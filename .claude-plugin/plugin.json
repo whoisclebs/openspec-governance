@@ -1,0 +1,31 @@
+{
+  "name": "openspec-governance",
+  "version": "0.1.0",
+  "description": "OpenSpec lifecycle governance for Claude Code: stage band, fail-closed edit gate, task progress and an append-only execution log.",
+  "author": {
+    "name": "whoisclebs",
+    "url": "https://github.com/whoisclebs"
+  },
+  "types": "./types/index.d.ts",
+  "license": "MIT",
+  "repository": "https://github.com/whoisclebs/openspec-governance",
+  "userConfig": {
+    "gate": {
+      "type": "string",
+      "title": "Edit gate",
+      "description": "enforce denies Write/Edit outside openspec/ while the active change fails the fail-closed checks; warn only shows a toast; off disables the gate.",
+      "options": [
+        "enforce",
+        "warn",
+        "off"
+      ],
+      "default": "enforce"
+    },
+    "strict": {
+      "type": "boolean",
+      "title": "Strict mode",
+      "description": "In a project that has openspec/changes, also deny Write/Edit outside openspec/ when no change is active (no plan exists).",
+      "default": false
+    }
+  }
+}
