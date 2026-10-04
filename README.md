@@ -52,6 +52,7 @@
         <li><a href="#the-stage-band">The stage band</a></li>
         <li><a href="#the-fail-closed-gate">The fail-closed gate</a></li>
         <li><a href="#the-execution-log">The execution log</a></li>
+        <li><a href="#the-detail-pane">The detail pane</a></li>
         <li><a href="#configuration">Configuration</a></li>
         <li><a href="#limitations">Limitations</a></li>
       </ul>
@@ -78,6 +79,7 @@ It is a Claude Code **mod**: a plugin of function hooks that loads into a runnin
 * **Fail-closed gate.** `Write`, `Edit` and `NotebookEdit` outside `openspec/` are denied while the change has no `tasks.md`, no acceptance criteria, or an open CRITICAL finding.
 * **Task progress.** An `x/total` bar read from the checkboxes of `tasks.md`.
 * **Execution log.** An append-only `execution-log.md` filled by a hook after each edit, with stage changes, findings, verifications and gate decisions.
+* **Detail pane.** The `/openspec` command (or the band's `Details` button) opens a pane with the stage checklist, gate reasons, every task, the findings and the recent log rows.
 
 Nothing here touches projects that do not use OpenSpec: a file is only governed when a folder above it contains `openspec/changes`.
 
@@ -181,6 +183,39 @@ After a successful edit the mod appends a row to `openspec/changes/<name>/execut
 
 Kinds are `stage-check`, `implementation`, `gate-denied`, `gate-warned`, `finding` and `verification`. The log is append-only: `Write`, `Edit` and `NotebookEdit` on `execution-log.md` are denied, and the mod serializes its own writes so parallel tool calls do not drop rows.
 
+### The detail pane
+
+Run `/openspec`, or press `Details` on the band, to open a pane with the full picture of the active change:
+
+```text
+add-search  openspec/changes/add-search
+
+Stage
+✔ proposed   proposal.md with Why and What Changes
+✔ designed   design.md with Context, Decisions, Migration Plan
+✔ specified  one or more .md files under specs/
+▶ planned    tasks.md with stable task IDs
+○ ready-to-implement  everything above, no open CRITICAL finding
+...
+
+Gate
+closed: edits outside openspec/ are denied
+  • open CRITICAL finding(s): findings/sqli.md
+
+Tasks
+███░░░░░░░ 1/3
+  [x] 1.1 Add the index in `search.go`
+  [ ] 1.2 Add tests
+
+Findings
+  CRITICAL  open        sqli.md
+
+Recent activity
+  12:04:10 stage-check    `planned` → `ready-to-implement`
+```
+
+`Refresh` re-reads the artifacts. The pane also refreshes on its own after each governed edit and when a turn completes.
+
 ### Configuration
 
 Set these under the plugin's options (the `/config` menu, or `pluginConfigs` in settings).
@@ -225,7 +260,7 @@ The logic lives in pure functions under `hooks/lib/`, which the tests cover with
 - [x] Append-only execution log
 - [ ] Require a migration strategy when the design says migrations are needed
 - [ ] Check that tasks name scoped files or modules
-- [ ] Findings panel
+- [x] Detail pane with stage checklist, tasks, findings and recent activity
 - [x] Install through a plugin marketplace
 
 See the [open issues](https://github.com/whoisclebs/openspec-governance/issues) for a full list of proposed features and known issues.
