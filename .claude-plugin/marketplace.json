@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "openspec-governance",
+  "description": "OpenSpec lifecycle governance for Claude Code.",
+  "owner": {
+    "name": "whoisclebs",
+    "url": "https://github.com/whoisclebs"
+  },
+  "plugins": [
+    {
+      "name": "openspec-governance",
+      "description": "Stage band, fail-closed edit gate, task progress and an append-only execution log for OpenSpec changes.",
+      "author": { "name": "whoisclebs", "url": "https://github.com/whoisclebs" },
+      "category": "development",
+      "homepage": "https://github.com/whoisclebs/openspec-governance",
+      "source": "./"
+    }
+  ]
+}
