@@ -79,7 +79,7 @@ It is a Claude Code **mod**: a plugin of function hooks that loads into a runnin
 * **Fail-closed gate.** `Write`, `Edit` and `NotebookEdit` outside `openspec/` are denied while the change has no `tasks.md`, no acceptance criteria, or an open CRITICAL finding.
 * **Task progress.** An `x/total` bar read from the checkboxes of `tasks.md`.
 * **Execution log.** An append-only `execution-log.md` filled by a hook after each edit, with stage changes, findings, verifications and gate decisions.
-* **Detail pane.** The `/openspec` command (or the band's `Details` button) opens a pane with the stage checklist, gate reasons, every task, the findings and the recent log rows.
+* **Live detail pane.** The `/openspec` command (or the band's `Details` button) opens a pane with a filter box, every active change of the project, and for the changes in view the stage checklist, gate reasons, every task, the specs with their requirements, the findings and the recent log rows. It re-reads the artifacts every few seconds while it is open.
 
 Nothing here touches projects that do not use OpenSpec: a file is only governed when a folder above it contains `openspec/changes`.
 
@@ -185,11 +185,17 @@ Kinds are `stage-check`, `implementation`, `gate-denied`, `gate-warned`, `findin
 
 ### The detail pane
 
-Run `/openspec`, or press `Details` on the band, to open a pane with the full picture of the active change:
+Run `/openspec`, or press `Details` on the band, to open a pane. It takes the keys when it opens, so you can type in the filter box straight away; `Esc` returns to the prompt.
 
 ```text
-add-search  openspec/changes/add-search
+[ filter changes, tasks, specs, findings           ]
+[ Clear ] [ Refresh ]  live: re-reads every few seconds while open
 
+Changes (2)
+[ ▶ add-search ] planned ███░░░░░░░ 1/3 gate closed
+[   other      ] proposed ░░░░░░░░░░ 0/1 gate closed   [ Show ]
+
+━━ add-search  (focus)
 Stage
 ✔ proposed   proposal.md with Why and What Changes
 ✔ designed   design.md with Context, Decisions, Migration Plan
@@ -202,10 +208,15 @@ Gate
 closed: edits outside openspec/ are denied
   • open CRITICAL finding(s): findings/sqli.md
 
-Tasks
-███░░░░░░░ 1/3
+Tasks ███░░░░░░░ 1/3
   [x] 1.1 Add the index in `search.go`
   [ ] 1.2 Add tests
+  [ ] 1.3 Document the flag
+
+Specs 1 file(s) · 2 requirement(s) · 3 scenario(s)
+  search  search/spec.md
+    + Search by name  2 scenario(s)
+    ~ Ranking         1 scenario(s)
 
 Findings
   CRITICAL  open        sqli.md
@@ -214,7 +225,13 @@ Recent activity
   12:04:10 stage-check    `planned` → `ready-to-implement`
 ```
 
-`Refresh` re-reads the artifacts. The pane also refreshes on its own after each governed edit and when a turn completes.
+* **Filter box.** Words are matched in any order, ignoring case, against change names, tasks (ID and text), specs (capability, file and requirement names), findings and log rows. While a filter is set the stage and gate checklists are hidden, each change list row shows how many items match, and the task header reads `showing 2 of 14`.
+* **Changes.** Every active change of the project is listed with its stage, progress and gate. The band shows `(+N)` when there are others.
+* **Focus.** The change you read or edit is focused automatically. Press its name in the list to focus another one by hand; the band follows.
+* **Several at once.** `Show` adds a change's full detail below the focused one, `Hide` removes it again, so you can compare changes until you drop one.
+* **Tasks.** All of them, with no cap; the pane scrolls.
+* **Specs.** Each spec file with its requirements, marked `+` added, `~` modified, `-` removed, `→` renamed or `•` for a plain spec, and the number of scenarios each one has. A requirement with no scenario is drawn in red, since the gate counts scenarios as acceptance criteria.
+* **Live.** While the pane is open it re-reads the artifacts every 3 seconds, and it also refreshes after each governed edit and when a turn completes. `Refresh` forces it.
 
 ### Configuration
 
@@ -260,7 +277,7 @@ The logic lives in pure functions under `hooks/lib/`, which the tests cover with
 - [x] Append-only execution log
 - [ ] Require a migration strategy when the design says migrations are needed
 - [ ] Check that tasks name scoped files or modules
-- [x] Detail pane with stage checklist, tasks, findings and recent activity
+- [x] Live detail pane: filter box, changes, focus, every task, specs, findings and recent activity
 - [x] Install through a plugin marketplace
 
 See the [open issues](https://github.com/whoisclebs/openspec-governance/issues) for a full list of proposed features and known issues.
