@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 
 import { memoryFs } from './memory-fs'
-import { CHANGE, PROPOSAL, ROOT, TASKS, criticalFinding, readyProject } from './fixtures'
+import { CHANGE, PROPOSAL, ROOT, TASKS, readyProject } from './fixtures'
 
 const LOG = `${CHANGE}/execution-log.md`
 const SRC = `${ROOT}/src/search.go`
@@ -52,20 +52,6 @@ describe('fail-closed gate', () => {
     expect(files[SRC]).toBe('new')
     expect(files[LOG]).toContain('2026-10-03T12:00:00.000Z | implementation |')
     expect(files[LOG]).toContain('`src/search.go` (tasks 0/2, stage ready-to-implement)')
-  })
-
-  test('an open CRITICAL finding closes the gate, a resolved one does not', async ($, on) => {
-    const files = readyProject()
-    files[`${CHANGE}/findings/sqli.md`] = criticalFinding('open')
-    memoryFs(on, files, ROOT)
-    mock.clock(on, { now: 0 })
-
-    const blocked = await $.tool.call({ tool: 'Write', file_path: SRC, content: 'a' })
-    expect(blocked.deny).toContain('CRITICAL')
-
-    files[`${CHANGE}/findings/sqli.md`] = criticalFinding('resolved')
-    const open = await $.tool.call({ tool: 'Write', file_path: SRC, content: 'b' })
-    expect(open.deny).toBeUndefined()
   })
 
   test('always allows edits inside openspec/ and logs the stage change', async ($, on) => {
@@ -199,9 +185,9 @@ describe('detail pane', () => {
   const textOf = async (ui: { findAll: (q: { type: string }) => Promise<{ text?: string }[]> }) =>
     (await ui.findAll({ type: 'Text' })).map(node => node.text ?? '').join('\n')
 
-  test('lists the stage checklist, tasks, findings and recent activity', async ($, on) => {
+  test('lists the stage checklist, tasks, specs and recent activity', async ($, on) => {
     const files = readyProject()
-    files[`${CHANGE}/findings/sqli.md`] = criticalFinding('open')
+    delete files[`${CHANGE}/specs/search/spec.md`]
     memoryFs(on, files, ROOT)
     mock.clock(on, { now: Date.UTC(2026, 9, 3, 12) })
     await $.tool.call({ tool: 'Write', file_path: SRC, content: 'x' })
@@ -216,13 +202,12 @@ describe('detail pane', () => {
     const text = await textOf(ui)
 
     expect(text).toContain('add-search')
-    expect(text).toContain('▶ planned')
-    expect(text).toContain('✔ specified')
+    expect(text).toContain('▶ designed')
+    expect(text).toContain('✔ proposed')
     expect(text).toContain('closed: edits outside openspec/ are denied')
-    expect(text).toContain('open CRITICAL finding(s)')
+    expect(text).toContain('no acceptance criteria')
+    expect(text).toContain('No specs yet')
     expect(text).toContain('1.1 Add the index')
-    expect(text).toContain('CRITICAL')
-    expect(text).toContain('sqli.md')
     expect(text).toContain('gate-denied')
   })
 
@@ -294,7 +279,7 @@ describe('live pane', () => {
     expect(text).not.toContain('more in tasks.md')
   })
 
-  test('the filter box narrows tasks, specs and findings', async ($, on) => {
+  test('the filter box narrows tasks and specs', async ($, on) => {
     const files = readyProject()
     files[`${CHANGE}/specs/search/spec.md`] = '## ADDED Requirements\n### Requirement: Fuzzy match\n#### Scenario: typo\n### Requirement: Exact match\n#### Scenario: same\n'
     memoryFs(on, files, ROOT)
@@ -327,10 +312,8 @@ describe('live pane', () => {
     const text = await textOf(await mount($))
 
     expect(text).toContain('Specs 1 file(s) · 2 requirement(s) · 2 scenario(s)')
-    expect(text).toContain('+ Covered')
-    expect(text).toContain('2 scenario(s)')
-    expect(text).toContain('+ Bare')
-    expect(text).toContain('0 scenario(s)')
+    expect(text).toContain('+ (2) Covered')
+    expect(text).toContain('+ (0) Bare')
   })
 
   test('focusing another change swaps the detail and the band', async ($, on) => {
@@ -362,5 +345,42 @@ describe('live pane', () => {
 
     await ui.press({ key: 'toggle-other' })
     expect(await textOf(ui)).not.toContain('Unrelated chore')
+  })
+})
+
+describe('pane details', () => {
+  const pane = { bodyColumns: 100, maxRows: 40, scroll: { offset: 0, bodyRows: 40 }, view: {}, title: 'OpenSpec' }
+
+  const mount = ($: { ui: { mount: (target: never) => Promise<unknown> } }) =>
+    $.ui.mount({
+      plugin: 'openspec-governance',
+      surface: 'terminal',
+      component: 'Pane',
+      requestId: 'openspec-governance',
+      props: pane,
+    } as never) as Promise<any>
+
+  test('draws the filter as a labelled box and prints each task ID once', async ($, on) => {
+    memoryFs(on, readyProject(), ROOT)
+    mock.clock(on, { now: 0 })
+    await $.tool.call({ tool: 'Read', file_path: `${CHANGE}/proposal.md` })
+    const ui = await mount($)
+    const text = (await ui.findAll({ type: 'Text' })).map((node: { text?: string }) => node.text ?? '').join('\n')
+
+    expect(text).toContain('Filter')
+    expect(await ui.find({ type: 'Input', key: 'filter' })).toBeDefined()
+    expect(text).toContain('1.1 Add the index')
+    expect(text).not.toContain('1.1 1.1')
+  })
+
+  test('only draws what OpenSpec defines', async ($, on) => {
+    memoryFs(on, readyProject(), ROOT)
+    mock.clock(on, { now: 0 })
+    await $.tool.call({ tool: 'Read', file_path: `${CHANGE}/proposal.md` })
+    const ui = await mount($)
+    const text = (await ui.findAll({ type: 'Text' })).map((node: { text?: string }) => node.text ?? '').join('\n')
+
+    expect(text).toContain('✔ proposed')
+    expect(text).not.toMatch(/discovery|verified|Findings|CRITICAL/)
   })
 })
