@@ -106,19 +106,25 @@ The mod is a folder with a `.claude-plugin/plugin.json` manifest and a hooks mod
 
 ### Installation
 
-1. Clone the repo
-   ```sh
-   git clone https://github.com/whoisclebs/openspec-governance.git
+Install it like any other Claude Code plugin, from inside Claude Code:
+
+1. Add the marketplace
    ```
-2. Start Claude Code with the folder as a plugin directory
-   ```sh
-   claude --plugin-dir ./openspec-governance
+   /plugin marketplace add whoisclebs/openspec-governance
    ```
-   To load it in sessions that cannot take a flag (the desktop app, an SDK host), name the folder in `CLAUDE_CODE_PLUGIN_DIRS` instead.
-3. Confirm it loaded
-   ```sh
-   claude plugin validate ./openspec-governance
+2. Install the plugin
    ```
+   /plugin install openspec-governance@openspec-governance
+   ```
+
+The same two steps work from a shell as `claude plugin marketplace add whoisclebs/openspec-governance` and `claude plugin install openspec-governance@openspec-governance`. Both options have defaults, so there is nothing to configure; see [Configuration](#configuration) to change them. Run `/reload-plugins` if the session was already open.
+
+To try a local checkout instead, point Claude Code at the folder:
+
+```sh
+git clone https://github.com/whoisclebs/openspec-governance.git
+claude --plugin-dir ./openspec-governance
+```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -220,7 +226,7 @@ The logic lives in pure functions under `hooks/lib/`, which the tests cover with
 - [ ] Require a migration strategy when the design says migrations are needed
 - [ ] Check that tasks name scoped files or modules
 - [ ] Findings panel
-- [ ] Install through a plugin marketplace
+- [x] Install through a plugin marketplace
 
 See the [open issues](https://github.com/whoisclebs/openspec-governance/issues) for a full list of proposed features and known issues.
 
