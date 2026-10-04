@@ -1,6 +1,6 @@
 {
   "name": "openspec-governance",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "OpenSpec lifecycle governance for Claude Code: stage band, fail-closed edit gate, task progress and an append-only execution log.",
   "author": {
     "name": "whoisclebs",
