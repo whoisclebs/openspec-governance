@@ -1,14 +1,15 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
-import type { Focus, Snapshot } from '../types'
+import type { Focus, LogRow, Snapshot } from '../types'
 import { isVerificationName } from './lib/artifacts'
 import { denyMessage, gateReasons, noChangeMessage } from './lib/gate'
-import { LOG_FILE, appendRow, formatRow } from './lib/log'
+import { LOG_FILE, appendRow, formatRow, tailRows } from './lib/log'
 import type { LogKind } from './lib/log'
 import { dirname, isInside, joinPath, relativeTo, resolvePath } from './lib/paths'
 import { assess } from './lib/stage'
 import type { Assessment } from './lib/stage'
+import { bandView, detailView } from './lib/views'
 import type { Fs } from './lib/workspace'
 import {
   changeNameOf,
@@ -19,6 +20,7 @@ import {
 } from './lib/workspace'
 
 const PLUGIN = 'openspec-governance'
+const PANE = 'openspec-governance'
 
 const snapshot = atom({ plugin: 'openspec-governance', key: 'snapshot' } as const, null)
 const focus = atom({ plugin: 'openspec-governance', key: 'focus' } as const, null)
@@ -36,14 +38,7 @@ type Outcome = { deny?: string; isError?: boolean; result?: unknown }
 
 type Edit = { tool: 'Write' | 'Edit' | 'NotebookEdit'; path: string }
 
-const BAR_WIDTH = 10
-
-const progressBar = (done: number, total: number): string => {
-  const filled = total === 0 ? 0 : Math.round((done / total) * BAR_WIDTH)
-  return '█'.repeat(filled) + '░'.repeat(BAR_WIDTH - filled)
-}
-
-const snapshotOf = (root: string, name: string, assessment: Assessment): Snapshot => ({
+const snapshotOf = (root: string, name: string, assessment: Assessment, logTail: LogRow[]): Snapshot => ({
   root,
   change: name,
   stage: assessment.stage,
@@ -52,6 +47,14 @@ const snapshotOf = (root: string, name: string, assessment: Assessment): Snapsho
   tasksTotal: assessment.tasksTotal,
   openCritical: assessment.openCritical.length,
   gateReasons: gateReasons(assessment),
+  tasks: assessment.tasks.map(({ id, text, isDone }) => ({ id, text, isDone })),
+  findings: assessment.findings.map(finding => ({
+    file: finding.path,
+    severity: finding.severity,
+    status: finding.status,
+    isOpenCritical: finding.isOpenCritical,
+  })),
+  logTail,
 })
 
 // Log rows are read-modify-write: one queue keeps parallel tool calls from losing rows.
@@ -60,8 +63,20 @@ let logQueue: Promise<unknown> = Promise.resolve()
 const assessChange = async ($: Engine, root: string, name: string): Promise<Assessment> =>
   assess(await loadChange(fsOf($), root, name))
 
+const LOG_ROWS_SHOWN = 8
+
+const readLogTail = async ($: Engine, root: string, name: string): Promise<LogRow[]> => {
+  const text = await $.fs.read(joinPath(changesDir(root), name, LOG_FILE)).then(
+    value => (typeof value === 'string' ? value : null),
+    () => null,
+  )
+
+  return tailRows(text, LOG_ROWS_SHOWN)
+}
+
 const publish = async ($: Engine, root: string, name: string, assessment: Assessment) => {
-  await update($, snapshot, () => snapshotOf(root, name, assessment))
+  const logTail = await readLogTail($, root, name)
+  await update($, snapshot, () => snapshotOf(root, name, assessment, logTail))
   await update($, focus, (): Focus => ({ root, change: name }))
 }
 
@@ -197,7 +212,13 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  on('command.run', { command: 'openspec' }, async $ => {
+    await $.ui.open({ id: PANE, title: 'OpenSpec' })
+    return { text: 'OpenSpec pane opened.' }
+  })
+
   on('session.start', async ($, e, next) => {
+    await $.command.register({ name: 'openspec', description: 'Show the active OpenSpec change in a pane' })
     const started = await next(e)
     await refreshFocused($).catch(() => undefined)
     return started
@@ -213,27 +234,22 @@ export const register: Register = (on, options) => {
     const current = await read($, snapshot)
     if (current === null || e.props.hasSurvey) return next(e)
 
-    const { Box, Text } = $.ui.resolve(e)
-    const isBlocked = current.gateReasons.length > 0
-    const hint = current.missing[0]
-
-    return (
-      <Box>
-        <Text bold>OpenSpec </Text>
-        <Text>{current.change}</Text>
-        <Text dimColor> · </Text>
-        <Text color="cyan">{current.stage}</Text>
-        <Text dimColor> · </Text>
-        <Text>
-          {progressBar(current.tasksDone, current.tasksTotal)} {current.tasksDone}/{current.tasksTotal}
-        </Text>
-        <Text dimColor> · </Text>
-        <Text color={isBlocked ? 'red' : 'green'}>
-          {isBlocked ? `gate closed (${current.gateReasons.length})` : 'gate open'}
-        </Text>
-        {current.openCritical > 0 ? <Text color="red"> · {current.openCritical} CRITICAL</Text> : null}
-        {hint === undefined ? null : <Text dimColor> · next: {hint}</Text>}
-      </Box>
+    return bandView(
+      $.ui.resolve(e),
+      current,
+      () => $.ui.open({ id: PANE, title: 'OpenSpec' }),
     )
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
+    const current = await read($, snapshot)
+    const ui = $.ui.resolve(e)
+
+    if (current === null) {
+      const { Text } = ui
+      return <Text dimColor>No active OpenSpec change. Read or edit a file under openspec/changes/&lt;name&gt;/ to pick one.</Text>
+    }
+
+    return detailView(ui, current, () => refreshFocused($))
   })
 }

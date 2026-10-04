@@ -12,6 +12,17 @@ export type Stage =
 
 export type Focus = { root: string; change: string }
 
+export type TaskRow = { id: string | null; text: string; isDone: boolean }
+
+export type FindingRow = {
+  file: string
+  severity: string | null
+  status: string | null
+  isOpenCritical: boolean
+}
+
+export type LogRow = { time: string; kind: string; detail: string }
+
 export type Snapshot = {
   root: string
   change: string
@@ -23,6 +34,10 @@ export type Snapshot = {
   openCritical: number
   /** Reasons the fail-closed gate would deny an edit right now. */
   gateReasons: string[]
+  tasks: TaskRow[]
+  findings: FindingRow[]
+  /** The newest execution-log rows, oldest first. */
+  logTail: LogRow[]
 }
 
 declare module 'claude-code' {

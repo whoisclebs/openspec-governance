@@ -1,3 +1,5 @@
+import type { LogRow } from '../../types'
+
 export type LogKind =
   | 'stage-check'
   | 'implementation'
@@ -29,3 +31,15 @@ export const appendRow = (existing: string | null, row: string): string => {
   const base = existing === null || existing.trim() === '' ? HEADER : existing
   return `${base.endsWith('\n') ? base : `${base}\n`}${row}\n`
 }
+
+const ROW = /^\|\s*(\d{4}-\d{2}-\d{2}T[^|\s]+)\s*\|\s*([a-z-]+)\s*\|\s*(.*?)\s*\|\s*$/
+
+/** The last `count` rows of a log, oldest first; the header and any stray lines are skipped. */
+export const tailRows = (log: string | null, count: number): LogRow[] =>
+  (log ?? '')
+    .split('\n')
+    .flatMap(line => {
+      const match = ROW.exec(line)
+      return match === null ? [] : [{ time: match[1] ?? '', kind: match[2] ?? '', detail: (match[3] ?? '').replace(/\\\|/g, '|') }]
+    })
+    .slice(-count)
