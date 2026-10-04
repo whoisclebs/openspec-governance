@@ -2,7 +2,6 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
 import type { ChangeInfo, Focus, LogRow, Overview } from '../types'
-import { isVerificationName } from './lib/artifacts'
 import { denyMessage, gateReasons, noChangeMessage } from './lib/gate'
 import { LOG_FILE, appendRow, formatRow, tailRows } from './lib/log'
 import type { LogKind } from './lib/log'
@@ -48,15 +47,8 @@ const changeInfoOf = (name: string, assessment: Assessment, logTail: LogRow[]): 
   missing: assessment.missing,
   tasksDone: assessment.tasksDone,
   tasksTotal: assessment.tasksTotal,
-  openCritical: assessment.openCritical.length,
   gateReasons: gateReasons(assessment),
   tasks: assessment.tasks.map(({ id, text, isDone }) => ({ id, text, isDone })),
-  findings: assessment.findings.map(finding => ({
-    file: finding.path,
-    severity: finding.severity,
-    status: finding.status,
-    isOpenCritical: finding.isOpenCritical,
-  })),
   specs: assessment.specs,
   logTail,
 })
@@ -178,14 +170,6 @@ const governed = async <R extends Outcome>(
       'implementation',
       `${edit.tool} \`${relative}\` (tasks ${after.tasksDone}/${after.tasksTotal}, stage ${after.stage})`,
     )
-  }
-
-  const inFindings = isInside(joinPath(changesDir(root), name, 'findings'), file)
-  if (inFindings) {
-    const isVerification = isVerificationName(file.split('/').pop() ?? '')
-    await log($, root, name, isVerification ? 'verification' : 'finding', `${edit.tool} \`${relative}\``)
-  } else if (isArtifact && isVerificationName(file.split('/').pop() ?? '')) {
-    await log($, root, name, 'verification', `${edit.tool} \`${relative}\``)
   }
 
   if (before.stage !== after.stage) {

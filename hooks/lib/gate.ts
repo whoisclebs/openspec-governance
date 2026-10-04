@@ -1,8 +1,8 @@
 import type { Assessment } from './stage'
 
 /**
- * The fail-closed checks for implementation edits: a plan with stable task IDs,
- * acceptance criteria, and no open CRITICAL finding. Empty means the gate is open.
+ * The fail-closed checks for implementation edits: a plan with stable task IDs and
+ * acceptance criteria. Empty means the gate is open.
  */
 export const gateReasons = (assessment: Assessment): string[] => {
   const reasons: string[] = []
@@ -17,9 +17,6 @@ export const gateReasons = (assessment: Assessment): string[] => {
     reasons.push('no acceptance criteria: add at least one `#### Scenario:` under specs/')
   }
 
-  if (assessment.openCritical.length > 0) {
-    reasons.push(`open CRITICAL finding(s): ${assessment.openCritical.join(', ')}`)
-  }
 
   return reasons
 }

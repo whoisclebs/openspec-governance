@@ -1,4 +1,3 @@
-import { isVerificationName } from './artifacts'
 import type { ChangeFiles, SpecFile } from './artifacts'
 import { dirname, isInside, joinPath, relativeTo } from './paths'
 
@@ -75,22 +74,14 @@ const collectMarkdown = async (fs: Fs, dir: string, depth: number): Promise<Spec
 
 export const loadChange = async (fs: Fs, root: string, name: string): Promise<ChangeFiles> => {
   const dir = joinPath(changesDir(root), name)
-  const top = await listDir(fs, dir)
-  const findings = await collectMarkdown(fs, joinPath(dir, 'findings'), 0)
-  const topNames = top.filter(entry => entry.kind === 'file').map(entry => entry.name)
 
   return {
     name,
     isArchived: false,
-    hasScoutNotes: topNames.some(file => file === 'scout-notes.md' || /^investigat/i.test(file)),
     proposal: await readText(fs, joinPath(dir, 'proposal.md')),
     design: await readText(fs, joinPath(dir, 'design.md')),
     tasks: await readText(fs, joinPath(dir, 'tasks.md')),
     specs: await collectMarkdown(fs, joinPath(dir, 'specs'), 0),
-    findings,
-    hasVerification:
-      topNames.some(isVerificationName) ||
-      findings.some(finding => isVerificationName(finding.path.split('/').pop() ?? '')),
   }
 }
 

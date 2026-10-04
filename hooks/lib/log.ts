@@ -5,15 +5,13 @@ export type LogKind =
   | 'implementation'
   | 'gate-denied'
   | 'gate-warned'
-  | 'finding'
-  | 'verification'
 
 export const LOG_FILE = 'execution-log.md'
 
 const HEADER = [
   '# Execution Log',
   '',
-  'Append-only record of stage checks, implementations, findings and verifications.',
+  'Append-only record of stage checks, implementations and gate decisions.',
   'Maintained by the `openspec-governance` plugin; do not edit by hand.',
   '',
   '| Time (UTC) | Kind | Detail |',

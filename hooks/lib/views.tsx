@@ -59,7 +59,6 @@ export const bandView = (ui: Ui, change: ChangeInfo, changeCount: number, onDeta
       <Text color={isBlocked ? 'red' : 'green'}>
         {isBlocked ? `gate closed (${change.gateReasons.length})` : 'gate open'}
       </Text>
-      {change.openCritical > 0 ? <Text color="red"> · {change.openCritical} CRITICAL</Text> : null}
       {hint === undefined ? null : <Text dimColor> · next: {hint}</Text>}
       <Text> </Text>
       <Button key="details" label="Details" onPress={onDetails} />
@@ -75,9 +74,6 @@ const changeBlock = (ui: Ui, change: ChangeInfo, query: string, isCurrent: boole
   const current = (STAGE_ORDER as readonly string[]).indexOf(change.stage)
 
   const tasks = change.tasks.filter(task => matchesQuery(query, task.id, task.text))
-  const findings = change.findings.filter(finding =>
-    matchesQuery(query, baseName(finding.file), finding.severity, finding.status),
-  )
   const rows = change.logTail.filter(row => matchesQuery(query, row.kind, row.detail))
   const specs = change.specs
     .map(spec => {
@@ -160,46 +156,32 @@ const changeBlock = (ui: Ui, change: ChangeInfo, query: string, isCurrent: boole
             <Text dimColor>  {specPath(spec.file)}</Text>
           </Box>
           {requirements.map((requirement, index) => (
-            <Box key={`req-${change.name}-${spec.file}-${index}`}>
-              <Text color={requirement.scenarios === 0 ? 'red' : undefined} wrap="truncate-end">
-                {'    '}
-                {OP_MARK[requirement.op] ?? '•'} {requirement.name}
-              </Text>
-              <Text dimColor={requirement.scenarios > 0} color={requirement.scenarios === 0 ? 'red' : undefined}>
-                {'  '}
-                {requirement.scenarios} scenario(s)
-              </Text>
-            </Box>
+            <Text
+              key={`req-${change.name}-${spec.file}-${index}`}
+              color={requirement.scenarios === 0 ? 'red' : undefined}
+              wrap="truncate-end"
+            >
+              {'    '}
+              {OP_MARK[requirement.op] ?? '•'} ({requirement.scenarios}) {requirement.name}
+            </Text>
           ))}
         </Box>
       ))}
 
-      <Text> </Text>
-      <Text bold underline>Findings</Text>
-      {change.findings.length === 0 ? <Text dimColor>  None recorded under findings/.</Text> : null}
-      {change.findings.length > 0 && findings.length === 0 ? <Text dimColor>  No finding matches.</Text> : null}
-      {findings.map(finding => (
-        <Box key={`finding-${change.name}-${finding.file}`}>
-          <Text color={finding.isOpenCritical ? 'red' : undefined} bold={finding.isOpenCritical}>
-            {'  '}
-            {(finding.severity ?? 'UNRATED').padEnd(9)}
-          </Text>
-          <Text dimColor>{(finding.status ?? 'no status').padEnd(12)}</Text>
-          <Text wrap="truncate-end">{baseName(finding.file)}</Text>
+      {change.logTail.length === 0 ? null : (
+        <Box flexDirection="column">
+          <Text> </Text>
+          <Text bold underline>Recent activity</Text>
+          {change.logTail.length > 0 && rows.length === 0 ? <Text dimColor>  No activity matches.</Text> : null}
+          {rows.map((row, index) => (
+            <Box key={`log-${change.name}-${index}`}>
+              <Text dimColor>{`  ${row.time.slice(11, 19)} `}</Text>
+              <Text color={row.kind === 'gate-denied' ? 'red' : 'cyan'}>{row.kind.padEnd(15)}</Text>
+              <Text wrap="truncate-end">{row.detail}</Text>
+            </Box>
+          ))}
         </Box>
-      ))}
-
-      <Text> </Text>
-      <Text bold underline>Recent activity</Text>
-      {change.logTail.length === 0 ? <Text dimColor>  The execution log is empty.</Text> : null}
-      {change.logTail.length > 0 && rows.length === 0 ? <Text dimColor>  No activity matches.</Text> : null}
-      {rows.map((row, index) => (
-        <Box key={`log-${change.name}-${index}`}>
-          <Text dimColor>{`  ${row.time.slice(11, 19)} `}</Text>
-          <Text color={row.kind === 'gate-denied' ? 'red' : 'cyan'}>{row.kind.padEnd(15)}</Text>
-          <Text wrap="truncate-end">{row.detail}</Text>
-        </Box>
-      ))}
+      )}
     </Box>
   )
 }
@@ -212,13 +194,17 @@ export const detailView = (ui: InputUi, context: PaneContext, actions: PaneActio
 
   return (
     <Box flexDirection="column">
-      <Input
-        key="filter"
-        placeholder="filter changes, tasks, specs, findings"
-        value={query}
-        onInput={value => actions.search(value)}
-        onSubmit={value => actions.search(value)}
-      />
+      <Box borderStyle="round" paddingX={1}>
+        <Text bold>Filter </Text>
+        <Input
+          key="filter"
+          placeholder="type to filter changes, tasks, specs"
+          value={query}
+          autoFocus
+          onInput={value => actions.search(value)}
+          onSubmit={value => actions.search(value)}
+        />
+      </Box>
       <Box>
         <Button key="clear" label="Clear" onPress={() => actions.search('')} />
         <Text> </Text>
@@ -247,6 +233,7 @@ export const detailView = (ui: InputUi, context: PaneContext, actions: PaneActio
             </Text>
             <Text color={isBlocked ? 'red' : 'green'}>{isBlocked ? 'gate closed' : 'gate open'}</Text>
             {hits === null ? null : <Text color="yellow"> {hits} match(es)</Text>}
+            {isCurrent ? null : <Text> </Text>}
             {isCurrent ? null : (
               <Button
                 key={`toggle-${change.name}`}

@@ -23,8 +23,7 @@ export const visibleChanges = (
   ...overview.changes.filter(change => change.name !== current.name && shown.includes(change.name)),
 ]
 
-/** How many tasks, requirements and findings of a change match the query. */
+/** How many tasks and requirements of a change match the query. */
 export const matchCount = (change: ChangeInfo, query: string): number =>
   change.tasks.filter(task => matchesQuery(query, task.id, task.text)).length +
-  change.specs.flatMap(spec => spec.requirements.filter(req => matchesQuery(query, spec.capability, req.name))).length +
-  change.findings.filter(finding => matchesQuery(query, finding.file, finding.severity, finding.status)).length
+  change.specs.flatMap(spec => spec.requirements.filter(req => matchesQuery(query, spec.capability, req.name))).length
