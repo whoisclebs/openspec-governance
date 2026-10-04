@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { countScenarios, hasHeadings, parseFinding, parseTasks } from '../hooks/lib/artifacts'
 import type { ChangeFiles } from '../hooks/lib/artifacts'
 import { gateReasons } from '../hooks/lib/gate'
-import { appendRow, formatRow } from '../hooks/lib/log'
+import { appendRow, formatRow, tailRows } from '../hooks/lib/log'
 import { dirname, isInside, normalizePath, relativeTo, resolvePath } from '../hooks/lib/paths'
 import { assess } from '../hooks/lib/stage'
 import { DESIGN, PROPOSAL, SPEC, TASKS, criticalFinding } from './fixtures'
@@ -147,5 +147,29 @@ describe('execution log', () => {
 
   test('keeps a row on one line when the detail has pipes or newlines', () => {
     expect(formatRow('t', 'finding', 'a | b\nc')).toBe('| t | finding | a \\| b c |')
+  })
+})
+
+describe('tailRows', () => {
+  const log = [
+    '# Execution Log',
+    '',
+    '| Time (UTC) | Kind | Detail |',
+    '| --- | --- | --- |',
+    '| 2026-10-03T12:00:00.000Z | gate-denied | Write `a.go`: no tasks |',
+    '| 2026-10-03T12:01:00.000Z | implementation | Edit `a \\| b.go` |',
+    '| 2026-10-03T12:02:00.000Z | stage-check | `planned` → `ready-to-implement` |',
+    '',
+  ].join('\n')
+
+  test('returns the newest rows, oldest first, skipping the header', () => {
+    const rows = tailRows(log, 2)
+
+    expect(rows.map(row => row.kind)).toEqual(['implementation', 'stage-check'])
+    expect(rows[0]?.detail).toBe('Edit `a | b.go`')
+  })
+
+  test('is empty without a log', () => {
+    expect(tailRows(null, 5)).toEqual([])
   })
 })

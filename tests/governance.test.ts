@@ -192,3 +192,52 @@ describe('stage band', () => {
     expect(text).toContain('next: design.md')
   })
 })
+
+describe('detail pane', () => {
+  const pane = { bodyColumns: 100, maxRows: 40, scroll: { offset: 0, bodyRows: 40 }, view: {} }
+
+  const textOf = async (ui: { findAll: (q: { type: string }) => Promise<{ text?: string }[]> }) =>
+    (await ui.findAll({ type: 'Text' })).map(node => node.text ?? '').join('\n')
+
+  test('lists the stage checklist, tasks, findings and recent activity', async ($, on) => {
+    const files = readyProject()
+    files[`${CHANGE}/findings/sqli.md`] = criticalFinding('open')
+    memoryFs(on, files, ROOT)
+    mock.clock(on, { now: Date.UTC(2026, 9, 3, 12) })
+    await $.tool.call({ tool: 'Write', file_path: SRC, content: 'x' })
+
+    const ui = await $.ui.mount({
+      plugin: 'openspec-governance',
+      surface: 'terminal',
+      component: 'Pane',
+      requestId: 'openspec-governance',
+      props: { ...pane, title: 'OpenSpec' } as never,
+    })
+    const text = await textOf(ui)
+
+    expect(text).toContain('add-search')
+    expect(text).toContain('▶ planned')
+    expect(text).toContain('✔ specified')
+    expect(text).toContain('closed: edits outside openspec/ are denied')
+    expect(text).toContain('open CRITICAL finding(s)')
+    expect(text).toContain('1.1 Add the index')
+    expect(text).toContain('CRITICAL')
+    expect(text).toContain('sqli.md')
+    expect(text).toContain('gate-denied')
+  })
+
+  test('says so when no change is active', async ($, on) => {
+    memoryFs(on, {}, '/work/plain')
+    mock.clock(on, { now: 0 })
+
+    const ui = await $.ui.mount({
+      plugin: 'openspec-governance',
+      surface: 'terminal',
+      component: 'Pane',
+      requestId: 'openspec-governance',
+      props: { ...pane, title: 'OpenSpec' } as never,
+    })
+
+    expect(await textOf(ui)).toContain('No active OpenSpec change')
+  })
+})
